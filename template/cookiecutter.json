@@ -1,0 +1,7 @@
+{
+  "day": "{% now 'local', '%d' %}",
+  "__prompts__": {
+    "day": "Day of the challenge (e.g. '03')"
+  },
+  "_extensions": ["jinja2_time.TimeExtension"]
+}

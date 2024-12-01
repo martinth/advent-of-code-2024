@@ -1,10 +1,7 @@
 use anyhow::{Result, Context};
-use const_format::formatcp;
 
 #[macro_use]
 extern crate simple_log;
-
-const DAY: &str = "day_xx";
 
 #[derive(Debug)]
 pub struct Input {
@@ -46,22 +43,21 @@ fn solve_part_2(filename: &str) -> Result<u32> {
 fn main() -> Result<()> {
     simple_log::quick!("info");
 
-    info!("Result part 1: {}", solve_part_1(formatcp!("src/{}/input.txt", DAY))?);
-    info!("Result part 2: {}", solve_part_2(formatcp!("src/{}/input.txt", DAY))?);
+    info!("Result part 1: {}", solve_part_1("src/day_{{ cookiecutter.day }}/input.txt")?);
+    info!("Result part 2: {}", solve_part_2("src/day_{{ cookiecutter.day }}/input.txt")?);
     Ok(())
 }
 
 
 #[cfg(test)]
 mod tests {
-    use const_format::formatcp;
-    use crate::{solve_part_1, solve_part_2, DAY};
+    use crate::{solve_part_1, solve_part_2};
 
     #[test]
     fn solve_test_input_1() {
         simple_log::quick!("debug");
 
-        let result = solve_part_1(formatcp!("src/{}/test_input.txt", DAY)).unwrap();
+        let result = solve_part_1("src/day_{{ cookiecutter.day }}/test_input.txt").unwrap();
         assert_eq!(result, 42);
     }
 
@@ -69,7 +65,7 @@ mod tests {
     fn solve_test_input_2() {
         simple_log::quick!("debug");
 
-        let result = solve_part_2(formatcp!("src/{}/test_input.txt", DAY)).unwrap();
+        let result = solve_part_2("src/day_{{ cookiecutter.day }}/test_input.txt").unwrap();
         assert_eq!(result, 42);
     }
 }
