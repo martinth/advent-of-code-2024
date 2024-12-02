@@ -24,3 +24,9 @@ The things I learned each challenge:
     - Getting back in the groove of using Rust. I'm not using is regularly as part of work or free time. 
       I have gotten a bit, wait for it, rusty.
 
+- Day 2
+    - Took me a good while to realize where my mistake was after I had rewritten the core logic 2 times already. I should
+      really read the instructions word-by-word.
+    - How to solve it without additional allocations and just iterators and slices. It made the code quiet a lot longer
+      then the version the just copied data 
+
