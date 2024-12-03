@@ -18,6 +18,7 @@ dependencies = [
  "const_format",
  "ctor",
  "itertools",
+ "regex",
  "simple-log",
 ]
 
