@@ -30,3 +30,12 @@ The things I learned each challenge:
     - How to solve it without additional allocations and just iterators and slices. It made the code quiet a lot longer
       then the version the just copied data 
 
+- Day 3
+    - I directly saw I could use a Regex for at least part 1. But I really wanted to use a custom parser (by using nom) 
+      to solve it, but I could not get it to work. Once I switched to a Regex it was super easy.  
+    - Learning: Follow your instinct and don't try to be overly clever?!
+
+- Day 4:
+    - Coming up with a working algorithm to generate the necessary verticals really took me a lot of off-by-one errors.
+    - I think the concept of lifetimes and references *finally* clicked. At least I had almost no fights with the borrow
+      checker despite copies usage of references.
