@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt::Debug;
 use anyhow::{Result};
 
@@ -27,6 +28,7 @@ mod parse {
     }
 }
 
+/// Represents a sequence of chars we want to search in another sequence but forwards and backwards.
 #[derive(Debug)]
 struct Needle {
     needle: Vec<char>,
@@ -41,17 +43,19 @@ impl Needle {
         let mut needle_rev: Vec<char> = s.chars().collect();
         needle_rev.reverse();
 
-        Needle { needle: needle, needle_rev: needle_rev }
+        Needle { needle, needle_rev }
     }
 
     fn len(&self) -> usize {
         self.needle.len()
     }
 
+    /// check if either direction matches the given slice
     fn eq(&self, other: &[char]) -> bool {
         self.needle == *other || self.needle_rev == *other
     }
 
+    /// check if the needle starts or ends at the given position
     fn is_match(&self, haystack: &[&char], index: usize) -> bool {
         let slice: Option<Vec<char>> = haystack
             .get(index..index + self.len())
@@ -63,6 +67,7 @@ impl Needle {
     }
 }
 
+/// find the number of (overlapping) matches of the needle in the haystack
 fn count_matches(haystack: &[&char], needle: &Needle) -> u32 {
     let mut matches = 0u32;
 
@@ -77,6 +82,9 @@ fn count_matches(haystack: &[&char], needle: &Needle) -> u32 {
     matches
 }
 
+
+
+/// transpose the vec of vec without cloning the elements
 fn transpose<T>(v: &Vec<Vec<T>>) -> Vec<Vec<&T>> {
     assert!(!v.is_empty());
     let len = v[0].len();
@@ -91,6 +99,7 @@ fn transpose<T>(v: &Vec<Vec<T>>) -> Vec<Vec<&T>> {
         .collect()
 }
 
+/// A direction in which we can generate verticals from a matrix
 enum Direction {
     TopLeftToBottomRight,
     TopRightToBottomLeft,
@@ -106,19 +115,16 @@ impl Direction {
 
 }
 
-/// Yield a vec based on a start point and a direction from the matrix
-fn get_elements<T>(v: &Vec<Vec<T>>, start: (usize, usize), direction: Direction) -> Vec<&T>
-where
-    T: Debug
-{
-    let mut x = start.0;
-    let mut y = start.1;
-    let mut result: Vec<&T> = Vec::new();
+/// Yield a vertical based on a start point and a direction from the matrix
+fn create_vertical<'v, T>(v: &'v Vec<Vec<T>>, start: (usize, usize), direction: &Direction) -> Vec<&'v T> {
+    let (mut x, mut y) = start;
     let (dx, dy) = direction.offsets();
 
+    let mut result: Vec<&T> = Vec::new();
     while let Some(item) = v.get(y).and_then(|row| row.get(x)) {
         result.push(item);
 
+        // check if the new index would go out of bounds
         if let Some(new_x) = x.checked_add_signed(dx as isize) {
             x = new_x;
         } else {
@@ -134,8 +140,8 @@ where
     result
 }
 
-/// Generate all vectors that cover the given matrix vertically (left-to-right and right-to-left)
-fn verticals<T>(v: &Vec<Vec<T>>) -> Vec<Vec<&T>> where T: Debug  {
+/// generate all verticals in the given direction
+fn verticals<T>(v: &Vec<Vec<T>>, direction: Direction) -> Vec<Vec<&T>> {
     assert!(!v.is_empty());
 
     let mut verticals: Vec<Vec<&T>> = Vec::new();
@@ -145,20 +151,29 @@ fn verticals<T>(v: &Vec<Vec<T>>) -> Vec<Vec<&T>> where T: Debug  {
         if y == 0 {
             // we want to start at every item in the top row
             for x in 0..row.len() {
-                debug!("start at {}/{}: {:?}", x, y, &v[y][x]);
-                verticals.push(get_elements(v, (x, y), Direction::TopLeftToBottomRight));
-                verticals.push(get_elements(v, (x, y), Direction::TopRightToBottomLeft));
+                verticals.push(create_vertical(v, (x, y), &direction));
             }
         } else {
-            // every next row we only want the first and the last
-            debug!("start at {}/{}: {:?}", 0, y, &v[y][0]);
-            verticals.push(get_elements(v, (0, y), Direction::TopLeftToBottomRight));
-            verticals.push(get_elements(v, (row.len() - 1, y), Direction::TopRightToBottomLeft));
+            let start = match direction {
+                Direction::TopLeftToBottomRight => (0, y),
+                Direction::TopRightToBottomLeft => (row.len() - 1, y)
+            };
+            // every next row we only want the first and or the last
+            verticals.push(create_vertical(v, start, &direction));
         }
     }
 
-
     verticals
+}
+
+/// Generate all verticals that cover the given matrix vertically (left-to-right and right-to-left)
+fn all_verticals<T>(v: &Vec<Vec<T>>) -> Vec<Vec<&T>> {
+    let mut all_verticals: Vec<Vec<&T>> = Vec::new();
+
+    all_verticals.extend(verticals(v, Direction::TopLeftToBottomRight));
+    all_verticals.extend(verticals(v, Direction::TopRightToBottomLeft));
+
+    all_verticals
 }
 
 fn solve_part_1(filename: &str) -> Result<u32> {
@@ -167,17 +182,20 @@ fn solve_part_1(filename: &str) -> Result<u32> {
     let needle = Needle::new("XMAS");
     let mut total= 0u32;
 
+    // matches in horizontal direction
     for row in &input.data {
         let row: Vec<&char> = row.iter().collect();
         total += count_matches(&row, &needle);
     }
 
+    // matches in vertical direction
     let transposed = transpose(&input.data);
     for col in transposed {
         total += count_matches(&col, &needle);
     }
 
-    let verticals = verticals(&input.data);
+    // matches on both verticals
+    let verticals = all_verticals(&input.data);
     for vertical in verticals {
         total += count_matches(&vertical, &needle);
     }
@@ -185,18 +203,63 @@ fn solve_part_1(filename: &str) -> Result<u32> {
     Ok(total)
 }
 
+/// A char from the input matrix together with it's original position.
+#[derive(Debug)]
+struct PosChar {
+    c: char,
+    position: (usize, usize)
+}
+
+/// find the middle positions of the needle and extract the original information
+fn find_middle_positions<'h>(haystack: &'h[&PosChar], needle: &Needle) -> Vec<(usize, usize)> {
+    assert_eq!(needle.len() % 2, 1);
+    let middle_offset = needle.len() / 2;
+
+    let mut middle_positions = vec![];
+    for idx in 0..haystack.len() {
+        let haystack_chars: Vec<&char> = haystack.iter().map(|pc| &pc.c).collect();
+        if needle.is_match(&haystack_chars, idx) {
+            let middle = haystack[idx + middle_offset].position;
+            middle_positions.push(middle)
+        }
+    }
+
+    middle_positions
+}
+
 fn solve_part_2(filename: &str) -> Result<u32> {
     let input = parse::parse_input(filename)?;
 
     let needle = Needle::new("MAS");
-    // generate all the verticals ltr and rtl
-    let verticals = verticals(&input.data);
 
-    // search for all XMAS and mark their middle index (relative to org matrix)
+    // generate a matrix of PosChar so we can keep track of the original positions the chars
+    // in the verticals came from
+    let with_positions: Vec<Vec<PosChar>> = input.data
+        .into_iter()
+        .enumerate()
+        .map(|(y, row)| {
+            row.into_iter().enumerate().map(|(x, c)| {
+                PosChar { c, position: (x, y)}
+            }).collect()
+        })
+        .collect();
 
-    // check where the middle indices in both lists match and count how many there are
 
-    todo!()
+    // generate all the verticals ltr and rtl and find the middle position of the needle in all
+    let middles_ltr: HashSet<(usize, usize)> = verticals(&with_positions, Direction::TopLeftToBottomRight)
+        .into_iter()
+        .flat_map(|vertical| find_middle_positions(&vertical, &needle))
+        .collect();
+
+    let middles_rtl: HashSet<(usize, usize)> = verticals(&with_positions, Direction::TopRightToBottomLeft)
+        .into_iter()
+        .flat_map(|vertical| find_middle_positions(&vertical, &needle))
+        .collect();
+
+    // check where the middles in both lists match and count how many there are
+    let total = middles_ltr.intersection(&middles_rtl).count();
+
+    Ok(total.try_into().unwrap())
 }
 
 fn main() -> Result<()> {
@@ -211,7 +274,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use ctor::ctor;
-    use crate::{count_matches, Direction, Needle, solve_part_1, solve_part_2, verticals, get_elements};
+    use crate::{Direction, solve_part_1, solve_part_2, create_vertical};
 
     #[ctor]
     fn init() {
@@ -227,81 +290,8 @@ mod tests {
     #[test]
     fn solve_test_input_2() {
         let result = solve_part_2("src/day_04/test_input.txt").unwrap();
-        assert_eq!(result, 42);
+        assert_eq!(result, 9);
     }
-
-    // TODO: fix ref issues - code is working
-    // #[test]
-    // fn check_simple_cases() {
-    //     let needle = Needle::new("XMAS");
-    //
-    //     assert_eq!(count_matches(&"XMAS".chars().collect::<Vec<char>>(), &needle), 1);
-    //     assert_eq!(count_matches(&"SAMX".chars().collect::<Vec<char>>(), &needle), 1);
-    //     assert_eq!(count_matches(&"MMMSXXMASM".chars().collect::<Vec<char>>(), &needle), 1);
-    //     assert_eq!(count_matches(&"XMASAMXAMM".chars().collect::<Vec<char>>(), &needle), 2);
-    //     assert_eq!(count_matches(&"MAMMMXMMMM".chars().collect::<Vec<char>>(), &needle), 0);
-    // }
-
-    // #[test]
-    // fn generate_verticals_square() {
-    //     let input = vec![
-    //         vec!['a', 'b', 'c'],
-    //         vec!['d', 'e', 'f'],
-    //         vec!['g', 'h', 'i'],
-    //     ];
-    //
-    //     let verticals = verticals(&input);
-    //     for v in &verticals {
-    //         debug!("{:?}", v)
-    //     }
-    //
-    //
-    //     // left to right
-    //     assert_eq!(verticals.contains(&as_char_refs("aei")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("f")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("c")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("dh")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("g")), true);
-    //
-    //     // right to left
-    //     assert_eq!(verticals.contains(&as_char_refs("ceg")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("bd")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("a")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("fh")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("i")), true);
-    //
-    //     assert_eq!(verticals.len(), 10);
-    // }
-    //
-    // fn as_char_refs(s: &str) -> Vec<&char> {
-    //     let v: Vec<&char> = s.chars().map(|c| &c).collect();
-    //
-    //     v
-    // }
-    //
-    // #[test]
-    // fn generate_verticals_rectangle() {
-    //     let input = vec![
-    //         vec!['a', 'b', 'c'],
-    //         vec!['d', 'e', 'f'],
-    //     ];
-    //
-    //     let verticals = verticals(&input);
-    //
-    //     // left to right
-    //     assert_eq!(verticals.contains(&as_char_refs("ae")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("bf")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("c")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("d")), true);
-    //
-    //     // right to left
-    //     assert_eq!(verticals.contains(&as_char_refs("bd")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("ce")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("a")), true);
-    //     assert_eq!(verticals.contains(&as_char_refs("f")), true);
-    //
-    //     assert_eq!(verticals.len(), 8);
-    // }
 
     #[test]
     fn check_yield_verticals() {
@@ -326,7 +316,7 @@ mod tests {
     }
 
     fn get_elements_string(v: &Vec<Vec<char>>, start: (usize, usize), direction: Direction) -> String {
-        let result = get_elements(v, start, direction);
+        let result = create_vertical(v, start, &direction);
 
         result.iter().map(|c| **c).collect()
     }
