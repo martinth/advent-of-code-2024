@@ -51,20 +51,22 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use ctor::ctor;
     use crate::{solve_part_1, solve_part_2};
+
+    #[ctor]
+    fn init() {
+        simple_log::quick!("debug");
+    }
 
     #[test]
     fn solve_test_input_1() {
-        simple_log::quick!("debug");
-
         let result = solve_part_1("src/day_{{ cookiecutter.day }}/test_input.txt").unwrap();
         assert_eq!(result, 42);
     }
 
     #[test]
     fn solve_test_input_2() {
-        simple_log::quick!("debug");
-
         let result = solve_part_2("src/day_{{ cookiecutter.day }}/test_input.txt").unwrap();
         assert_eq!(result, 42);
     }
