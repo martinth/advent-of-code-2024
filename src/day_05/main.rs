@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::hash::{Hash, Hasher};
-use anyhow::{Result, Context};
+use anyhow::{Result};
 use std::iter::Extend;
 
 #[macro_use]
@@ -57,71 +57,149 @@ mod parse {
     }
 }
 
-/// Find the page ordering rules that are valid for a given print job of pages.
-fn get_relevant_rules<'r>(rules_for_pages: &'r HashMap<u32, Vec<&Rule>>, print_job: &Vec<u32>) -> HashSet<&'r Rule> {
-    print_job.iter()
-        .flat_map(|page| rules_for_pages.get(page).unwrap()
-            .into_iter()
-            .map(|r| *r) // deref
-        )
-        .collect()
+// A Rule violation at a given index in a print job
+#[derive(Debug)]
+pub struct Violation<'r> {
+    at_index: usize,
+    rule: &'r Rule
 }
 
-/// Check if a print job is valid for the given rule set
-fn is_valid_job(print_job: &Vec<u32>, rules: &HashSet<&Rule>) -> bool {
-
-    // this might be optimize able by checking from the page left and right in lockstep
-    for (page_idx, page) in print_job.iter().enumerate() {
-        // check forward
-        for page_after in &print_job[page_idx + 1..] {
-            let any_rule = rules.iter().any(|rule| rule.before == *page && rule.after == *page_after);
-            if !any_rule {
-                return false
-            }
-        }
-        // check forward
-        for page_before in &print_job[0..page_idx] {
-            let any_rule = rules.iter().any(|rule| rule.before == *page_before && rule.after == *page);
-            if !any_rule {
-                return false
-            }
-        }
-
-    }
-
-    true
+/// The page rules per page number where the page is either in the "before" or in the "after" part.
+/// This is used to only check the rules that are relevant for a print job.
+#[derive(Debug)]
+pub struct PageRules<'r> {
+    before: HashMap<u32, Vec<&'r Rule>>,
+    after: HashMap<u32, Vec<&'r Rule>>,
 }
 
-fn page_to_rules_map(rules: &Vec<Rule>) -> HashMap<u32, Vec<&Rule>> {
-    let mut rules_for_pages: HashMap<u32, Vec<&Rule>> = HashMap::new();
+/// Build the PageRules object from the given input rules.
+fn build_page_rules(rules: &Vec<Rule>) -> PageRules {
+    let mut page_rules = PageRules {
+        before: HashMap::new(),
+        after: HashMap::new(),
+    };
 
     rules.iter().for_each(|rule| {
-        rules_for_pages.entry(rule.before)
+        page_rules.before.entry(rule.before)
             .and_modify(|rules| rules.push(rule))
             .or_insert(vec![rule]);
-        rules_for_pages.entry(rule.after)
+        page_rules.after.entry(rule.after)
             .and_modify(|rules| rules.push(rule))
             .or_insert(vec![rule]);
     });
 
-    rules_for_pages
+    page_rules
+}
+
+/// Get all violations for a print job given at set of rules.
+fn get_violated_rules<'r>(print_job: &Vec<u32>, rules: &'r PageRules) -> Option<Vec<Violation<'r>>> {
+    let empty_rules: Vec<&Rule> = Vec::new();
+    let mut violations: Vec<Violation> = Vec::new();
+
+    // iterate over each page
+    for (page_idx, page) in print_job.iter().enumerate() {
+
+        // for checking, we only need the rules where the page is actually a part of
+        let rules_where_page_before = rules.before.get(page).unwrap_or(&empty_rules);
+        let rules_where_page_after = rules.after.get(page).unwrap_or(&empty_rules);
+
+        // check all pages before the current page for rule violations
+        for page_before in &print_job[0..page_idx] {
+
+            // rules_where_page_before already contains only the rules where "page" is the "before" page
+            // so if we find a rule that states that a page before it should actually after it, this is a
+            // rule violation
+            let before_violations= rules_where_page_before.iter()
+                .filter_map(|rule| if rule.after == *page_before {
+                    Some(Violation {
+                        at_index: page_idx,
+                        rule: *rule
+                    })
+                } else {
+                    None
+                } );
+
+            violations.extend(before_violations);
+        }
+
+        // same as previous loop, but we check all pages after the page
+        for page_after in &print_job[page_idx + 1..] {
+            let after_violations = rules_where_page_after.iter()
+                .filter_map(|rule| if rule.before == *page_after {
+                    Some(Violation {
+                        at_index: page_idx,
+                        rule: *rule
+                    })
+                } else {
+                    None
+                } );
+
+            violations.extend(after_violations);
+        }
+    }
+
+    if violations.is_empty() {
+        None
+    } else {
+        Some(violations)
+    }
+}
+
+
+/// Fix a single rule violation by swapping the two pages that are in the wrong order.
+fn fix_violation(print_job: &mut Vec<u32>, violation: &Violation) {
+    let page_at_index = print_job[violation.at_index];
+    let other_page = if page_at_index == violation.rule.after {
+        violation.rule.before
+    } else {
+        violation.rule.after
+    };
+    let other_page_index = print_job.into_iter().position(|page| *page == other_page).unwrap();
+
+    debug!("fix: swap index {} with {}", violation.at_index, other_page_index);
+
+    print_job.swap(violation.at_index, other_page_index)
+}
+
+/// Fix a single print job by repeatedly fixing the first violation.
+fn fix_violations(print_job: &Vec<u32>, page_rules: &PageRules) -> Option<Vec<u32>> {
+    let mut fixed_job = print_job.clone();
+
+    let mut needed_fixing = false;
+
+    // There is some big optimization potential here since we only ever use the first violation.
+    // But the code is fast enough as is, so I won't do it.
+    while let Some(violations) = get_violated_rules(&fixed_job, &page_rules) {
+        needed_fixing = true;
+        debug!("Job has violations: {violations:?}");
+        fix_violation(&mut fixed_job, &violations.first().unwrap());
+    }
+
+    // We only return Some if we actually fixed something so the calling code can differentiate.
+    if needed_fixing {
+        Some(fixed_job.clone())
+    } else {
+        None
+    }
+}
+
+fn get_middle_page(print_job: &Vec<u32>) -> u32 {
+    *print_job.get(print_job.len() / 2).unwrap()
 }
 
 fn solve_part_1(filename: &str) -> Result<u32> {
     let input = parse::parse_input(filename)?;
 
-    let rules_for_pages = page_to_rules_map(&input.rules);
+    let page_rules = build_page_rules(&input.rules);
 
     let mut total = 0u32;
     for (job_idx, print_job) in input.print_jobs.iter().enumerate() {
 
-        let mut relevant_rules = get_relevant_rules(&rules_for_pages, print_job);
-        let valid = is_valid_job(print_job, &relevant_rules);
-
-        debug!("Job {}: {}/{} rules -> {}", job_idx, relevant_rules.len(), input.rules.len(), valid);
-        if valid {
-            let middle_page = print_job.get(print_job.len() / 2).unwrap();
-            total += middle_page;
+        if let Some(_) = get_violated_rules(print_job, &page_rules) {
+            debug!("Job {job_idx} is bad");
+        } else {
+            debug!("Job {job_idx} is good");
+            total += get_middle_page(&print_job)
         }
 
     }
@@ -131,8 +209,16 @@ fn solve_part_1(filename: &str) -> Result<u32> {
 
 fn solve_part_2(filename: &str) -> Result<u32> {
     let input = parse::parse_input(filename)?;
+    let page_rules = build_page_rules(&input.rules);
 
-    todo!()
+    let mut total = 0u32;
+    for print_job in input.print_jobs.iter() {
+        if let Some(fixed_job) = fix_violations(print_job, &page_rules) {
+            total += get_middle_page(&fixed_job)
+        }
+    }
+
+    Ok(total)
 }
 
 fn main() -> Result<()> {
@@ -143,23 +229,26 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+// part 2: 9985 too high
 
 #[cfg(test)]
 mod tests {
+    use ctor::ctor;
     use crate::{solve_part_1, solve_part_2};
+
+    #[ctor]
+    fn init() {
+        simple_log::quick!("debug");
+    }
 
     #[test]
     fn solve_test_input_1() {
-        simple_log::quick!("debug");
-
         let result = solve_part_1("src/day_05/test_input.txt").unwrap();
         assert_eq!(result, 143);
     }
 
     #[test]
     fn solve_test_input_2() {
-        simple_log::quick!("debug");
-
         let result = solve_part_2("src/day_05/test_input.txt").unwrap();
         assert_eq!(result, 123);
     }
