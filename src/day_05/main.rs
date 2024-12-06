@@ -91,10 +91,9 @@ fn build_page_rules(rules: &Vec<Rule>) -> PageRules {
     page_rules
 }
 
-/// Get all violations for a print job given at set of rules.
-fn get_violated_rules<'r>(print_job: &Vec<u32>, rules: &'r PageRules) -> Option<Vec<Violation<'r>>> {
+/// Find first rule violation of a print job given at set of rules.
+fn find_violation<'r>(print_job: &Vec<u32>, rules: &'r PageRules) -> Option<Violation<'r>> {
     let empty_rules: Vec<&Rule> = Vec::new();
-    let mut violations: Vec<Violation> = Vec::new();
 
     // iterate over each page
     for (page_idx, page) in print_job.iter().enumerate() {
@@ -109,7 +108,7 @@ fn get_violated_rules<'r>(print_job: &Vec<u32>, rules: &'r PageRules) -> Option<
             // rules_where_page_before already contains only the rules where "page" is the "before" page
             // so if we find a rule that states that a page before it should actually after it, this is a
             // rule violation
-            let before_violations= rules_where_page_before.iter()
+            let before_violation = rules_where_page_before.iter()
                 .filter_map(|rule| if rule.after == *page_before {
                     Some(Violation {
                         at_index: page_idx,
@@ -117,14 +116,17 @@ fn get_violated_rules<'r>(print_job: &Vec<u32>, rules: &'r PageRules) -> Option<
                     })
                 } else {
                     None
-                } );
+                }).next();
 
-            violations.extend(before_violations);
+            if before_violation.is_some() {
+                return before_violation
+            }
+
         }
 
         // same as previous loop, but we check all pages after the page
         for page_after in &print_job[page_idx + 1..] {
-            let after_violations = rules_where_page_after.iter()
+            let after_violation = rules_where_page_after.iter()
                 .filter_map(|rule| if rule.before == *page_after {
                     Some(Violation {
                         at_index: page_idx,
@@ -132,17 +134,15 @@ fn get_violated_rules<'r>(print_job: &Vec<u32>, rules: &'r PageRules) -> Option<
                     })
                 } else {
                     None
-                } );
+                }).next();
 
-            violations.extend(after_violations);
+            if after_violation.is_some() {
+                return after_violation
+            }
         }
     }
 
-    if violations.is_empty() {
-        None
-    } else {
-        Some(violations)
-    }
+    None
 }
 
 
@@ -169,10 +169,10 @@ fn fix_violations(print_job: &Vec<u32>, page_rules: &PageRules) -> Option<Vec<u3
 
     // There is some big optimization potential here since we only ever use the first violation.
     // But the code is fast enough as is, so I won't do it.
-    while let Some(violations) = get_violated_rules(&fixed_job, &page_rules) {
+    while let Some(violation) = find_violation(&fixed_job, &page_rules) {
         needed_fixing = true;
-        debug!("Job has violations: {violations:?}");
-        fix_violation(&mut fixed_job, &violations.first().unwrap());
+        debug!("Job has violation: {violation:?}");
+        fix_violation(&mut fixed_job, &violation);
     }
 
     // We only return Some if we actually fixed something so the calling code can differentiate.
@@ -195,7 +195,7 @@ fn solve_part_1(filename: &str) -> Result<u32> {
     let mut total = 0u32;
     for (job_idx, print_job) in input.print_jobs.iter().enumerate() {
 
-        if let Some(_) = get_violated_rules(print_job, &page_rules) {
+        if let Some(_) = find_violation(print_job, &page_rules) {
             debug!("Job {job_idx} is bad");
         } else {
             debug!("Job {job_idx} is good");
