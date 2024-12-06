@@ -1,13 +1,16 @@
 use std::cmp::PartialEq;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Write};
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, anyhow};
+use itertools::Itertools;
+use rayon::prelude::*;
 
 #[macro_use]
 extern crate simple_log;
 
 type Position = (usize, usize);
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum ViewDirection {
     Up,
     Right,
@@ -26,12 +29,13 @@ impl ViewDirection {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Object {
     Empty,
     Item,
     Guard(ViewDirection),
-    Visited
+    Visited,
+    Blockage
 }
 
 impl Default for Object {
@@ -40,7 +44,7 @@ impl Default for Object {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Map {
     objects: Vec<Vec<Object>>,
     max_x: usize,
@@ -106,6 +110,7 @@ impl Display for Object {
                 ViewDirection::Left => f.write_char('<')?,
             }
             Object::Visited => f.write_char('X')?,
+            Object::Blockage => f.write_char('O')?,
         }
         Ok(())
     }
@@ -170,7 +175,7 @@ fn find_blocking_object(start_position: Position, view_direction: &ViewDirection
 
         // if there is an item there, the next guard position is the current one
         if let Some(object_at) = map.get(next_position) {
-            if *object_at == Object::Item {
+            if *object_at == Object::Item || *object_at == Object::Blockage {
                 return Some(current);
             }
             current = next_position;
@@ -239,7 +244,7 @@ fn do_step(map: &mut Map, current_position: Position, current_direction: &ViewDi
     return if let Some(new_guard_position) = find_blocking_object(current_position, current_direction, &map) {
         let new_direction = move_guard(map, current_position, new_guard_position)?;
         mark_visited(map, current_position, current_direction);
-        debug!("{}", map);
+        //debug!("{}", map);
         Ok(Some((new_guard_position, new_direction)))
     } else {
         mark_exit(map, current_position, current_direction);
@@ -247,40 +252,78 @@ fn do_step(map: &mut Map, current_position: Position, current_direction: &ViewDi
     }
 }
 
-
-fn solve_part_1(filename: &str) -> Result<u32> {
-    let mut map = parse::parse_input(filename)?;
-    info!("Starting map {}", map);
-
-    // find the current guard position
+/// Find an exit path but optionally check for endless loops.
+fn find_exit_path(map: &mut Map, loop_detection: bool) -> Result<Option<Vec<Position>>> {
     let (mut position, mut view_direction) = find_guard(&map)?;
 
+    let mut already_visited: HashSet<(Position, ViewDirection)> = HashSet::new();
+
     // simulate steps the guard takes until it leaved the map
-    while let Some((new_position, new_direction)) =  do_step(&mut map, position, &view_direction)? {
-        position = new_position;
-        view_direction = new_direction
+    while let Some(next_step) =  do_step(map, position, &view_direction)? {
+        if loop_detection {
+            if already_visited.iter().contains(&next_step) {
+                return Err(anyhow!("Loop detected, already visited {next_step:?}"))
+            }
+            already_visited.insert(next_step.clone());
+        }
+
+        position = next_step.0;
+        view_direction = next_step.1;
+
     }
 
-    info!("Done! {}", map);
-
-    // count the positions the guard visited
-    let mut total_visited = 0u32;
-    for row in &map.objects {
-        for object in row {
+    let mut result: Vec<Position> = Vec::new();
+    for (y, row) in map.objects.iter().enumerate() {
+        for (x, object) in row.iter().enumerate() {
             match object {
-                Object::Visited => total_visited += 1,
+                Object::Visited => result.push((x, y)),
                 _ => continue
             }
         }
     }
 
-    Ok(total_visited)
+    Ok(Some(result))
+}
+
+fn solve_part_1(filename: &str) -> Result<u32> {
+    let mut map = parse::parse_input(filename)?;
+    debug!("Starting map {}", map);
+
+    let path = find_exit_path(&mut map, false).unwrap().unwrap();
+    debug!("Done! {}", map);
+
+    Ok(path.len() as u32)
 }
 
 fn solve_part_2(filename: &str) -> Result<u32> {
-    let input = parse::parse_input(filename)?;
+    let map = parse::parse_input(filename)?;
 
-    todo!()
+    // get the original exit path of the guard
+    let mut original_map = map.clone();
+    let exit_path = find_exit_path(&mut original_map, false).unwrap().unwrap();
+
+    // loop over all positions (in parallel for speeeed)
+    let looping_paths = exit_path.into_par_iter()
+        .filter(|position| match map.get(*position) {
+            Some(Object::Guard(_)) => false, // skip guard position
+            Some(_) => true, // falls thought
+            None => panic!("Exit path positions should always be valid")
+        })
+        .fold(|| 0_u32, |blockage_count: u32, position: Position| {
+            // create a blockage at the position
+            let mut map_with_blockage = map.clone();
+            let _ = std::mem::replace(map_with_blockage.get_mut(position).expect("position is valid"), Object::Blockage);
+
+            // if the path now loops that is a valid blockage
+            if find_exit_path(&mut map_with_blockage, true).is_err() {
+                blockage_count + 1
+            } else {
+                blockage_count
+            }
+        })
+        .sum::<u32>();
+
+    Ok(looping_paths)
 }
 
 fn main() -> Result<()> {
@@ -294,21 +337,23 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use ctor::ctor;
     use crate::{solve_part_1, solve_part_2};
+
+    #[ctor]
+    fn init() {
+        simple_log::quick!("debug");
+    }
 
     #[test]
     fn solve_test_input_1() {
-        simple_log::quick!("debug");
-
         let result = solve_part_1("src/day_06/test_input.txt").unwrap();
         assert_eq!(result, 41);
     }
 
     #[test]
     fn solve_test_input_2() {
-        simple_log::quick!("debug");
-
         let result = solve_part_2("src/day_06/test_input.txt").unwrap();
-        assert_eq!(result, 42);
+        assert_eq!(result, 6);
     }
 }

@@ -39,3 +39,9 @@ The things I learned each challenge:
     - Coming up with a working algorithm to generate the necessary verticals really took me a lot of off-by-one errors.
     - I think the concept of lifetimes and references *finally* clicked. At least I had almost no fights with the borrow
       checker despite copies usage of references.
+
+- Day 6:
+    - The code is quit verbose, but I like my nice abstractions and things like "impl Display" for the map display so 
+      it can be easily debugged.  
+    - We are coming into an area where brute-forcing is not taking a significant amount of time so using [Rayon](https://docs.rs/rayon/latest/rayon/index.html)
+      for parallel processing makes it very nice.
