@@ -15,6 +15,7 @@ dependencies = [
  "allocation-counter",
  "anyhow",
  "aoc-parse",
+ "aoc_utils",
  "const_format",
  "ctor",
  "itertools",
@@ -72,6 +73,10 @@ dependencies = [
  "thiserror",
  "tuple_utils",
 ]
+
+[[package]]
+name = "aoc_utils"
+version = "0.1.0"
 
 [[package]]
 name = "arc-swap"

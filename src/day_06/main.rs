@@ -4,36 +4,18 @@ use std::fmt::{Display, Formatter, Write};
 use anyhow::{Result, bail, anyhow};
 use itertools::Itertools;
 use rayon::prelude::*;
+use aoc_utils::map::{Direction, Position};
 
 #[macro_use]
 extern crate simple_log;
 
-type Position = (usize, usize);
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum ViewDirection {
-    Up,
-    Right,
-    Down,
-    Left
-}
-
-impl ViewDirection {
-    fn turn_clockwise(&self) -> ViewDirection {
-        match self {
-            ViewDirection::Up => ViewDirection::Right,
-            ViewDirection::Right => ViewDirection::Down,
-            ViewDirection::Down => ViewDirection::Left,
-            ViewDirection::Left => ViewDirection::Up,
-        }
-    }
-}
+type Map = aoc_utils::map::Map<Object>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Object {
     Empty,
     Item,
-    Guard(ViewDirection),
+    Guard(Direction),
     Visited,
     Blockage
 }
@@ -44,70 +26,16 @@ impl Default for Object {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Map {
-    objects: Vec<Vec<Object>>,
-    max_x: usize,
-    max_y: usize,
-}
-
-impl Map {
-
-    /// get reference to item at given position
-    fn get(&self, (x, y): (usize, usize)) -> Option<&Object> {
-        self.objects.get(y)
-            .and_then(|row| row.get(x))
-    }
-
-    /// get mutable reference to item at given position
-    fn get_mut(&mut self, (x, y): (usize, usize)) -> Option<&mut Object> {
-        self.objects.get_mut(y)
-            .and_then(|row| row.get_mut(x))
-    }
-
-    /// Calculate the new position if walking from the given position in given direction.
-    /// Returns None if the step would leave the map
-    fn new_position(&self, position: Position, view_direction: &ViewDirection) -> Option<Position> {
-        let delta = match view_direction {
-            ViewDirection::Up => (0, -1),
-            ViewDirection::Right => (1, 0),
-            ViewDirection::Down => (0, 1),
-            ViewDirection::Left => (-1, 0)
-        };
-
-        // calculate new position based on direction but respect map boundaries
-        let new_x = position.0.checked_add_signed(delta.0 as isize);
-        let new_y = position.1.checked_add_signed(delta.1 as isize);
-        return match (new_x, new_y) {
-            (Some(x), Some(y)) if x <= self.max_x && y <= self.max_y => Some((x, y)),
-            _ => None
-        }
-    }
-}
-
-// nice map display
-impl Display for Map {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_char('\n')?;
-        for row in &self.objects {
-            for object in row {
-                object.fmt(f)?
-            }
-            f.write_char('\n')?
-        }
-        Ok(())
-    }
-}
 impl Display for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Object::Empty => f.write_char('.')?,
             Object::Item => f.write_char('#')?,
             Object::Guard(direction) => match direction {
-                ViewDirection::Up => f.write_char('^')?,
-                ViewDirection::Right => f.write_char('>')?,
-                ViewDirection::Down => f.write_char('v')?,
-                ViewDirection::Left => f.write_char('<')?,
+                Direction::Up => f.write_char('^')?,
+                Direction::Right => f.write_char('>')?,
+                Direction::Down => f.write_char('v')?,
+                Direction::Left => f.write_char('<')?,
             }
             Object::Visited => f.write_char('X')?,
             Object::Blockage => f.write_char('O')?,
@@ -120,36 +48,31 @@ mod parse {
     use aoc_parse::{parser, prelude::*};
     use anyhow::{Result, Context};
     use std::fs::read_to_string;
-    use crate::{Map, Object, ViewDirection};
+    use aoc_utils::map::{Direction,Map};
+    use crate::Object;
 
-    pub fn parse_input(filename: &str) -> Result<Map> {
+    pub fn parse_input(filename: &str) -> Result<Map<Object>> {
+
         let parser = parser!(lines({
             "." => Object::Empty,
             "#" => Object::Item,
-            "^" => Object::Guard(ViewDirection::Up),
-            ">" => Object::Guard(ViewDirection::Right),
-            "<" => Object::Guard(ViewDirection::Left),
-            "v" => Object::Guard(ViewDirection::Down),
+            "^" => Object::Guard(Direction::Up),
+            ">" => Object::Guard(Direction::Right),
+            "<" => Object::Guard(Direction::Left),
+            "v" => Object::Guard(Direction::Down),
             "X" => Object::Visited
         }+));
 
         let raw_data = read_to_string(filename)?;
         let objects = parser.parse(&raw_data).context("parse error")?;
 
-        let max_x = objects.get(0).unwrap().len() - 1;
-        let max_y = objects.len();
-
-        Ok(Map {
-            objects,
-            max_x,
-            max_y,
-        })
+        Ok(Map::from_nested_vecs(objects))
     }
 }
 
 
 /// Find the guard on the map and the direction it's looking at.
-fn find_guard(map: &Map) -> Result<(Position, ViewDirection)> {
+fn find_guard(map: &Map) -> Result<(Position, Direction)> {
     for (y, row) in map.objects.iter().enumerate() {
         for (x, object) in row.iter().enumerate() {
             match object {
@@ -167,7 +90,7 @@ fn find_guard(map: &Map) -> Result<(Position, ViewDirection)> {
 
 /// Find the position at which the guard will run into an object (not the position of the object itself!).
 /// Returns None if there is nothing blocking the guard.
-fn find_blocking_object(start_position: Position, view_direction: &ViewDirection, map: &Map) -> Option<Position> {
+fn find_blocking_object(start_position: Position, view_direction: &Direction, map: &Map) -> Option<Position> {
      let mut current: Position = start_position.clone();
 
     // cast ray in that position
@@ -189,7 +112,7 @@ fn find_blocking_object(start_position: Position, view_direction: &ViewDirection
 }
 
 /// Move the guard from a current position to the target.
-fn move_guard(map: &mut Map, current_position: Position, new_position: Position) -> Result<ViewDirection> {
+fn move_guard(map: &mut Map, current_position: Position, new_position: Position) -> Result<Direction> {
     // grab the guard from the map and put default in place, we need to do the replacement in two steps since
     // we can not have to mutable references into the map so we can not directly swap 1 for 1
     let guard = std::mem::take(map.get_mut(current_position).expect("position is valid"));
@@ -212,7 +135,7 @@ fn move_guard(map: &mut Map, current_position: Position, new_position: Position)
 
 /// Mark the path from a starting position until we reach the guard. This traces the path it must
 /// have walked.
-fn mark_visited(map: &mut Map, start: Position, direction: &ViewDirection) {
+fn mark_visited(map: &mut Map, start: Position, direction: &Direction) {
     let mut current = start;
     loop {
         let object_at = map.get_mut(current).expect("position is valid");
@@ -227,7 +150,7 @@ fn mark_visited(map: &mut Map, start: Position, direction: &ViewDirection) {
 }
 
 /// Mark the exit path of the guard from it's current position.
-fn mark_exit(map: &mut Map, start: Position, direction: &ViewDirection) {
+fn mark_exit(map: &mut Map, start: Position, direction: &Direction) {
     let mut current = start;
     while let Some(pos_ref) = map.get_mut(current) {
         let _ = std::mem::replace(pos_ref, Object::Visited);
@@ -240,7 +163,7 @@ fn mark_exit(map: &mut Map, start: Position, direction: &ViewDirection) {
 }
 
 /// Simulation step
-fn do_step(map: &mut Map, current_position: Position, current_direction: &ViewDirection) -> Result<Option<(Position, ViewDirection)>> {
+fn do_step(map: &mut Map, current_position: Position, current_direction: &Direction) -> Result<Option<(Position, Direction)>> {
     return if let Some(new_guard_position) = find_blocking_object(current_position, current_direction, &map) {
         let new_direction = move_guard(map, current_position, new_guard_position)?;
         mark_visited(map, current_position, current_direction);
@@ -256,7 +179,7 @@ fn do_step(map: &mut Map, current_position: Position, current_direction: &ViewDi
 fn find_exit_path(map: &mut Map, loop_detection: bool) -> Result<Option<Vec<Position>>> {
     let (mut position, mut view_direction) = find_guard(&map)?;
 
-    let mut already_visited: HashSet<(Position, ViewDirection)> = HashSet::new();
+    let mut already_visited: HashSet<(Position, Direction)> = HashSet::new();
 
     // simulate steps the guard takes until it leaved the map
     while let Some(next_step) =  do_step(map, position, &view_direction)? {
