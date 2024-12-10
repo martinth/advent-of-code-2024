@@ -21,6 +21,8 @@ pub struct Equation {
 #[derive(Debug)]
 pub struct Solution {
     equation: Equation,
+
+    #[allow(dead_code)] // just used in tests
     operators: Vec<Operator>
 }
 
@@ -127,8 +129,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use ctor::ctor;
-    use itertools::{Itertools, repeat_n};
-    use crate::{Equation, find_solution, Operator, solve_part_1, solve_part_2};
+    use crate::{Equation, find_solution, solve_part_1, solve_part_2};
     use crate::Operator::{Add, Multiply};
 
     #[ctor]

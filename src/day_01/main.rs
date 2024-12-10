@@ -88,21 +88,23 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use ctor::ctor;
     use const_format::formatcp;
     use crate::{solve_part_1, solve_part_2, DAY};
 
+    #[ctor]
+    fn init() {
+        simple_log::quick!("debug");
+    }
+
     #[test]
     fn solve_test_input_1() {
-        simple_log::quick!("debug");
-
         let result = solve_part_1(formatcp!("src/{}/test_input.txt", DAY)).unwrap();
         assert_eq!(result, 11);
     }
 
     #[test]
     fn solve_test_input_2() {
-        simple_log::quick!("debug");
-
         let result = solve_part_2(formatcp!("src/{}/test_input.txt", DAY)).unwrap();
         assert_eq!(result, 31);
     }

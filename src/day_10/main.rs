@@ -1,15 +1,12 @@
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::future::poll_fn;
 use anyhow::{Result};
-use aoc_parse::prelude::aoc_parse;
 use aoc_utils::map::{Direction, Map, Position};
 
 #[macro_use]
 extern crate simple_log;
 
 type InputMap = Map<usize>;
-type SearchMap = Map<Object>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Object {
@@ -52,7 +49,7 @@ fn solve_part_1(filename: &str) -> Result<u32> {
     debug!("Start map: {map}");
 
     // search all start positions
-    let mut trail_heads: Vec<Position> = map.iter_objects()
+    let trail_heads: Vec<Position> = map.iter_objects()
         .filter_map(|(position, item)| {
             if *item == 0 {
                 Some(position)

@@ -1,7 +1,6 @@
 use std::collections::{HashMap};
 use std::hash::{Hash, Hasher};
 use anyhow::{Result};
-use std::iter::Extend;
 
 #[macro_use]
 extern crate simple_log;
