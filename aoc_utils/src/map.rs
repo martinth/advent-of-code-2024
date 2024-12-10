@@ -84,6 +84,11 @@ impl <T> Map<T> {
             _ => None
         }
     }
+
+    /// Create an iterator that walks the map in reading order
+    pub fn iter_objects(&self) -> PositionIterator<T> {
+        PositionIterator::for_map(self)
+    }
 }
 
 // nice map display
@@ -97,6 +102,43 @@ impl <T> Display for Map<T> where T: Display {
             f.write_char('\n')?
         }
         Ok(())
+    }
+}
+
+pub struct PositionIterator<'m, T> {
+    map: &'m Map<T>,
+    cur_y: usize,
+    cur_x: usize
+}
+
+impl <T> PositionIterator<'_, T> {
+    fn for_map(map: & Map<T>) -> PositionIterator<'_, T> {
+        PositionIterator {
+            map,
+            cur_y: 0,
+            cur_x: 0
+        }
+    }
+}
+
+impl <'m, T> Iterator for PositionIterator<'m, T> {
+    type Item = (Position, &'m T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let row = self.map.objects.get(self.cur_y);
+        let item = row.and_then(|row| row.get(self.cur_x));
+
+        if item.is_none() {
+            None
+        } else {
+            let result = Some(((self.cur_x, self.cur_y), item.unwrap()));
+            self.cur_x += 1;
+            if self.cur_x >= row.unwrap().len() {
+                self.cur_x = 0;
+                self.cur_y += 1;
+            }
+            result
+        }
     }
 }
 
