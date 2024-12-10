@@ -50,25 +50,25 @@ impl <T> Map<T> {
     }
 
     /// get reference to item at given position
-    pub fn get(&self, (x, y): (usize, usize)) -> Option<&T> {
-        self.objects.get(y)
-            .and_then(|row| row.get(x))
+    pub fn get(&self, (x, y): &Position) -> Option<&T> {
+        self.objects.get(*y)
+            .and_then(|row| row.get(*x))
     }
 
     /// get mutable reference to item at given position
-    pub fn get_mut(&mut self, (x, y): (usize, usize)) -> Option<&mut T> {
-        self.objects.get_mut(y)
-            .and_then(|row| row.get_mut(x))
+    pub fn get_mut(&mut self, (x, y):&Position) -> Option<&mut T> {
+        self.objects.get_mut(*y)
+            .and_then(|row| row.get_mut(*x))
     }
 
-    pub fn set(&mut self, position: (usize, usize), item: T)  {
+    pub fn set(&mut self, position: &Position, item: T)  {
         let cell_ref = self.get_mut(position).unwrap();
         *cell_ref = item
     }
 
     /// Calculate the new position if walking from the given position in given direction.
     /// Returns None if the step would leave the map
-    pub fn new_position(&self, position: Position, direction: &Direction) -> Option<Position> {
+    pub fn new_position(&self, position: &Position, direction: &Direction) -> Option<Position> {
         let delta = match direction {
             Direction::Up => (0, -1),
             Direction::Right => (1, 0),

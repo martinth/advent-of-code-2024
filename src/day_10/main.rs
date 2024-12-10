@@ -74,7 +74,7 @@ fn solve_part_1(filename: &str) -> Result<u32> {
 
 fn compute_head_score(map: &InputMap, start: Position) -> usize {
     let mut search_map = Map::with_size(map.max_x + 1, map.max_y + 1, Object::Unvisited);
-    search_map.set(start.clone(), Object::Tile(0));
+    search_map.set(&start, Object::Tile(0));
 
     let mut to_explore: Vec<Position> = vec![start];
     let mut reachable_peaks: HashSet<Position> = HashSet::new();
@@ -82,17 +82,17 @@ fn compute_head_score(map: &InputMap, start: Position) -> usize {
     let directions = vec![Direction::Up, Direction::Right, Direction::Down, Direction::Left];
 
     while let Some(current) = to_explore.pop() {
-        let current_height = match map.get(current) {
+        let current_height = match map.get(&current) {
             None => panic!("Nothing in map at {:?}", current),
             Some(height) => height
         };
 
         for direction in &directions {
-            if let Some(neighbor_position) = map.new_position(current, direction) {
-                let neighbor_height = map.get(neighbor_position).expect("all map items have a height");
+            if let Some(neighbor_position) = map.new_position(&current, direction) {
+                let neighbor_height = map.get(&neighbor_position).expect("all map items have a height");
                 if *neighbor_height == *current_height + 1 {
                     // this is a path "up"
-                    search_map.set(neighbor_position, Object::Tile(*neighbor_height));
+                    search_map.set(&neighbor_position, Object::Tile(*neighbor_height));
                      if *neighbor_height < 9 {
                          // we have not reached the peak, need to explore further from there
                          to_explore.insert(0, neighbor_position);

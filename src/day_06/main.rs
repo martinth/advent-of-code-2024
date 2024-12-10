@@ -94,10 +94,10 @@ fn find_blocking_object(start_position: Position, view_direction: &Direction, ma
      let mut current: Position = start_position.clone();
 
     // cast ray in that position
-    while let Some(next_position) = map.new_position(current, view_direction) {
+    while let Some(next_position) = map.new_position(&current, view_direction) {
 
         // if there is an item there, the next guard position is the current one
-        if let Some(object_at) = map.get(next_position) {
+        if let Some(object_at) = map.get(&next_position) {
             if *object_at == Object::Item || *object_at == Object::Blockage {
                 return Some(current);
             }
@@ -115,7 +115,7 @@ fn find_blocking_object(start_position: Position, view_direction: &Direction, ma
 fn move_guard(map: &mut Map, current_position: Position, new_position: Position) -> Result<Direction> {
     // grab the guard from the map and put default in place, we need to do the replacement in two steps since
     // we can not have to mutable references into the map so we can not directly swap 1 for 1
-    let guard = std::mem::take(map.get_mut(current_position).expect("position is valid"));
+    let guard = std::mem::take(map.get_mut(&current_position).expect("position is valid"));
 
     let (new_guard, new_direction) = match guard {
         Object::Guard(current_direction) => {
@@ -128,7 +128,7 @@ fn move_guard(map: &mut Map, current_position: Position, new_position: Position)
     };
 
     // place new guard on map
-    let _ = std::mem::replace(map.get_mut(new_position).expect("position is valid"), new_guard);
+    let _ = std::mem::replace(map.get_mut(&new_position).expect("position is valid"), new_guard);
 
     Ok(new_direction)
 }
@@ -138,12 +138,12 @@ fn move_guard(map: &mut Map, current_position: Position, new_position: Position)
 fn mark_visited(map: &mut Map, start: Position, direction: &Direction) {
     let mut current = start;
     loop {
-        let object_at = map.get_mut(current).expect("position is valid");
+        let object_at = map.get_mut(&current).expect("position is valid");
         match object_at {
             Object::Guard(_) => break,
             _ => {
-                let _ = std::mem::replace(map.get_mut(current).expect("position is valid"), Object::Visited);
-                current = map.new_position(current, direction).unwrap()
+                let _ = std::mem::replace(map.get_mut(&current).expect("position is valid"), Object::Visited);
+                current = map.new_position(&current, direction).unwrap()
             }
         }
     }
@@ -152,9 +152,9 @@ fn mark_visited(map: &mut Map, start: Position, direction: &Direction) {
 /// Mark the exit path of the guard from it's current position.
 fn mark_exit(map: &mut Map, start: Position, direction: &Direction) {
     let mut current = start;
-    while let Some(pos_ref) = map.get_mut(current) {
+    while let Some(pos_ref) = map.get_mut(&current) {
         let _ = std::mem::replace(pos_ref, Object::Visited);
-        if let Some(new_pos) = map.new_position(current, direction) {
+        if let Some(new_pos) = map.new_position(&current, direction) {
             current = new_pos
         } else {
             break
@@ -227,7 +227,7 @@ fn solve_part_2(filename: &str) -> Result<u32> {
 
     // loop over all positions (in parallel for speeeed)
     let looping_paths = exit_path.into_par_iter()
-        .filter(|position| match map.get(*position) {
+        .filter(|position| match map.get(position) {
             Some(Object::Guard(_)) => false, // skip guard position
             Some(_) => true, // falls thought
             None => panic!("Exit path positions should always be valid")
@@ -235,7 +235,7 @@ fn solve_part_2(filename: &str) -> Result<u32> {
         .fold(|| 0_u32, |blockage_count: u32, position: Position| {
             // create a blockage at the position
             let mut map_with_blockage = map.clone();
-            let _ = std::mem::replace(map_with_blockage.get_mut(position).expect("position is valid"), Object::Blockage);
+            let _ = std::mem::replace(map_with_blockage.get_mut(&position).expect("position is valid"), Object::Blockage);
 
             // if the path now loops that is a valid blockage
             if find_exit_path(&mut map_with_blockage, true).is_err() {
