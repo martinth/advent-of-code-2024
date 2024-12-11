@@ -18,6 +18,7 @@ rayon = "1.10.0"
 regex = "1.11.1"
 simple-log = "2.1.1"
 aoc_utils = { path = "./aoc_utils" }
+serde = { version = "1.0.215", features = ["derive"] }
 
 [[bin]]
 name = "day_01"
@@ -54,3 +55,7 @@ path = "src/day_08/main.rs"
 [[bin]]
 name = "day_10"
 path = "src/day_10/main.rs"
+
+[[bin]]
+name = "day_11"
+path = "src/day_11/main.rs"

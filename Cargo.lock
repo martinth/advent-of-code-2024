@@ -21,6 +21,7 @@ dependencies = [
  "itertools",
  "rayon",
  "regex",
+ "serde",
  "simple-log",
 ]
 
