@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt::{Display, Formatter, Write};
 
 pub type Position = (usize, usize);
@@ -89,6 +90,10 @@ impl <T> Map<T> {
     pub fn iter_objects(&self) -> PositionIterator<T> {
         PositionIterator::for_map(self)
     }
+
+    pub fn breath_first_search(&self, start_position: Position) -> BreathFirstSearch<T> {
+        BreathFirstSearch::for_map(self, start_position)
+    }
 }
 
 // nice map display
@@ -142,7 +147,55 @@ impl <'m, T> Iterator for PositionIterator<'m, T> {
     }
 }
 
+pub struct BreathFirstSearch<'m, T> {
+    map: &'m Map<T>,
+    visited: Map<bool>,
+    to_explore: VecDeque<Position>,
+}
 
+impl <T> BreathFirstSearch<'_, T> {
+    fn for_map(map: & Map<T>, start_position: Position) -> BreathFirstSearch<'_, T> {
+        let mut to_explore = VecDeque::new();
+        to_explore.push_back(start_position);
+        BreathFirstSearch {
+            map,
+            visited: Map::with_size(map.max_x + 1, map.max_y + 1, false),
+            to_explore
+        }
+    }
+
+    pub fn explore<F>(&mut self, mut accept_fn: F)
+        where F: FnMut(&Position, &T) -> bool
+    {
+        while let Some(current) = self.to_explore.pop_front() {
+            // if the position has been checked, we can skip it
+            if *self.visited.get(&current).unwrap() {
+                continue
+            }
+
+            if let Some(item) = self.map.get(&current) {
+
+                // check with callback and mark as visited
+                let is_accepted = accept_fn(&current, item);
+                self.visited.set(&current, true);
+
+                if is_accepted {
+                    // if the current node is okay, we also add the neighbors
+                    for direction in &vec![Direction::Up, Direction::Right, Direction::Down, Direction::Left] {
+                        if let Some(neighbor_position) = self.map.new_position(&current, direction) {
+
+                            // add neighbors but only if they have not been visited
+                            if *self.visited.get(&neighbor_position).unwrap() {
+                                continue
+                            }
+                            self.to_explore.push_back(neighbor_position)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
